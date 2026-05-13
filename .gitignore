@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets / local config
+.env
+
+# Pixlet / Tidbyt build artifacts
+*.webp
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
