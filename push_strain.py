@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 WHOOP_CYCLE_URL = "https://api.prod.whoop.com/developer/v1/cycle"
 TIDBYT_PUSH_URL = "https://api.tidbyt.com/v0/devices/{device_id}/push"
-INSTALLATION_ID = "whoop-strain"
+INSTALLATION_ID = "whoopstrain"
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
