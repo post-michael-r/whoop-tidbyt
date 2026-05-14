@@ -1,0 +1,51 @@
+name: Push Whoop strain to Tidbyt
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    env:
+      WHOOP_CLIENT_ID: ${{ secrets.WHOOP_CLIENT_ID }}
+      WHOOP_CLIENT_SECRET: ${{ secrets.WHOOP_CLIENT_SECRET }}
+      WHOOP_REFRESH_TOKEN: ${{ secrets.WHOOP_REFRESH_TOKEN }}
+      TIDBYT_DEVICE_ID: ${{ secrets.TIDBYT_DEVICE_ID }}
+      TIDBYT_API_KEY: ${{ secrets.TIDBYT_API_KEY }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install libwebp
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebp-dev
+
+      - name: Install pixlet
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/tidbyt/pixlet/releases/latest \
+            | jq -r '.assets[] | select(.name | test("linux_amd64\\.tar\\.gz$")) | .browser_download_url')
+          curl -fsSL -o /tmp/pixlet.tar.gz "$URL"
+          mkdir -p /tmp/pixlet
+          tar -xzf /tmp/pixlet.tar.gz -C /tmp/pixlet
+          sudo install -m 0755 /tmp/pixlet/pixlet /usr/local/bin/pixlet
+          pixlet version
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Push strain
+        run: python push_strain.py

@@ -10,9 +10,12 @@ import requests
 from dotenv import load_dotenv
 
 WHOOP_TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
-WHOOP_CYCLE_URL = "https://api.prod.whoop.com/developer/v1/cycle"
+WHOOP_CYCLE_URL = "https://api.prod.whoop.com/developer/v2/cycle"
 TIDBYT_PUSH_URL = "https://api.tidbyt.com/v0/devices/{device_id}/push"
 INSTALLATION_ID = "whoopstrain"
+
+GITHUB_REPO = "post-michael-r/whoop-tidbyt"
+GITHUB_SECRET_NAME = "WHOOP_REFRESH_TOKEN"
 
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
@@ -54,6 +57,52 @@ def update_env_refresh_token(env_path, new_value):
     with open(tmp_path, "w") as f:
         f.writelines(new_lines)
     os.replace(tmp_path, env_path)
+
+
+def update_github_secret_refresh_token(new_value):
+    gh_pat = os.environ.get("GH_PAT")
+    if not gh_pat:
+        fail("GH_PAT not set; cannot rotate refresh token secret in GitHub Actions mode.")
+
+    from nacl.encoding import Base64Encoder
+    from nacl.public import PublicKey, SealedBox
+
+    headers = {
+        "Authorization": f"Bearer {gh_pat}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    pk_resp = requests.get(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/public-key",
+        headers=headers,
+        timeout=30,
+    )
+    if pk_resp.status_code != 200:
+        fail(f"GitHub public-key fetch HTTP {pk_resp.status_code}: {pk_resp.text}")
+    pk = pk_resp.json()
+
+    sealed = SealedBox(PublicKey(pk["key"].encode("ascii"), encoder=Base64Encoder))
+    encrypted = sealed.encrypt(new_value.encode("utf-8"))
+
+    put_resp = requests.put(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/secrets/{GITHUB_SECRET_NAME}",
+        headers=headers,
+        json={
+            "encrypted_value": base64.b64encode(encrypted).decode("ascii"),
+            "key_id": pk["key_id"],
+        },
+        timeout=30,
+    )
+    if put_resp.status_code not in (201, 204):
+        fail(f"GitHub secret update HTTP {put_resp.status_code}: {put_resp.text}")
+
+
+def persist_refresh_token(new_value):
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        update_github_secret_refresh_token(new_value)
+    else:
+        update_env_refresh_token(ENV_PATH, new_value)
 
 
 def main():
@@ -104,7 +153,8 @@ def main():
         soft_exit(f"No access_token in Whoop response: {tokens}")
 
     if new_refresh and new_refresh != refresh_token:
-        update_env_refresh_token(ENV_PATH, new_refresh)
+        persist_refresh_token(new_refresh)
+        print("Refresh token rotated")
 
     try:
         cycle_resp = requests.get(
@@ -124,6 +174,10 @@ def main():
         soft_exit("No cycles returned by Whoop; nothing to push.")
 
     latest = records[0]
+    score_state = latest.get("score_state")
+    if score_state != "SCORED":
+        soft_exit(f"Latest cycle score_state is {score_state!r}; nothing to push.")
+
     score = latest.get("score")
     if score is None:
         soft_exit("Latest cycle has no score yet; nothing to push.")
